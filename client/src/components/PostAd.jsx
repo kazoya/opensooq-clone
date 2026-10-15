@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { t, tf } from '../i18n';
 import { getCategories, getCities, createAd } from '../api';
 
 const PostAd = ({ onSubmit }) => {
@@ -50,52 +51,52 @@ const PostAd = ({ onSubmit }) => {
 
   return (
     <div>
-      <h1>إنشاء إعلان</h1>
+      <h1>{t('إنشاء إعلان')}</h1>
       {errorMessage && <p data-testid="error-message">{errorMessage}</p>}
       <form onSubmit={handleSubmit}>
         <label>
-          العنوان:
+          {t('العنوان:')}
           <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} data-testid="ad-title" />
         </label>
         <label>
-          الوصف:
+          {t('الوصف:')}
           <textarea value={description} onChange={(e) => setDescription(e.target.value)} data-testid="ad-description" />
         </label>
         <label>
-          السعر:
+          {t('السعر:')}
           <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} data-testid="ad-price" />
         </label>
         <label>
-          الفئة:
+          {t('الفئة:')}
           <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} data-testid="ad-category">
-            <option value="">اختر الفئة</option>
+            <option value="">{t('اختر الفئة')}</option>
             {categories.map(category => (
-              <option key={category.id} value={category.id}>{category.name}</option>
+              <option key={category.id} value={category.id}>{tf(category, 'name')}</option>
             ))}
           </select>
         </label>
         <label>
-          المدينة:
+          {t('المدينة:')}
           <select value={cityId} onChange={(e) => setCityId(e.target.value)} data-testid="ad-city">
-            <option value="">اختر المدينة</option>
+            <option value="">{t('اختر المدينة')}</option>
             {cities.map(city => (
-              <option key={city.id} value={city.id}>{city.name}</option>
+              <option key={city.id} value={city.id}>{tf(city, 'name')}</option>
             ))}
           </select>
         </label>
         <label>
-          البائع:
+          {t('البائع:')}
           <input type="text" value={sellerName} onChange={(e) => setSellerName(e.target.value)} data-testid="ad-seller" />
         </label>
         <label>
-          الهاتف:
+          {t('الهاتف:')}
           <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} data-testid="ad-phone" />
         </label>
         <label>
-          الصورة:
+          {t('الصورة:')}
           <input type="file" accept="image/png,image/jpeg,image/webp" data-testid="ad-image-input" onChange={e => setImage(e.target.files[0] || null)} />
         </label>
-        <button type="submit" data-testid="submit-ad">إنشاء</button>
+        <button type="submit" data-testid="submit-ad">{t('إنشاء')}</button>
       </form>
     </div>
   );

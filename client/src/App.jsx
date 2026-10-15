@@ -1,4 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { t, useLang } from './i18n';
+import { useTheme } from './theme';
+import Toggles from './components/Toggles';
+import AdminPanel from './components/AdminPanel';
 import { getCategories, getCities, getAds, getAdById, createAd, deleteAd, register, login, getMe, logout, uploadAdImage, getMyAds } from './api';
 import Home from './components/Home';
 import AdDetail from './components/AdDetail';
@@ -7,6 +11,8 @@ import AuthForm from './components/AuthForm';
 import MyAds from './components/MyAds';
 
 const App = () => {
+  useLang();
+  useTheme();
   const [categories, setCategories] = useState([]);
   const [cities, setCities] = useState([]);
   const [ads, setAds] = useState([]);
@@ -131,18 +137,29 @@ const App = () => {
   };
 
   return (
-    <div>
-      <header>
+    <div className="app">
+      <header className="site-header">
+        <button type="button" className="brand" onClick={handleGoBack} data-testid="brand">
+          <span className="brand-mark" aria-hidden="true">◆</span>
+          <span>{t('السوق المفتوح')}</span>
+        </button>
+        <nav className="nav">
         {user ? (
-          <div>
-            <span data-testid="user-name">{user.name}</span>
-            <button onClick={handleLogout} data-testid="logout">تسجيل الخروج</button>
-            <button onClick={() => setView('my-ads')} data-testid="nav-my-ads">إعلاناتي</button>
-          </div>
+          <>
+            <span className="user-chip" data-testid="user-name">{user.name}</span>
+            {user.role === 'admin' && (
+              <button className="btn-ghost" onClick={() => setView('admin')} data-testid="nav-admin">{t('لوحة المدير')}</button>
+            )}
+            <button className="btn-ghost" onClick={() => setView('my-ads')} data-testid="nav-my-ads">{t('إعلاناتي')}</button>
+            <button className="btn-ghost" onClick={() => { handleLogout(); setView('home'); }} data-testid="logout">{t('تسجيل الخروج')}</button>
+          </>
         ) : (
-          <button onClick={() => { setAuthFormVisible(true); setAuthFormType('login'); }} data-testid="nav-login">تسجيل الدخول</button>
+          <button className="btn-ghost" onClick={() => { setAuthFormVisible(true); setAuthFormType('login'); }} data-testid="nav-login">{t('تسجيل الدخول')}</button>
         )}
+          <Toggles />
+        </nav>
       </header>
+      <main>
       {authFormVisible && (
         <AuthForm
           type={authFormType}
@@ -175,7 +192,7 @@ const App = () => {
       )}
       {view === 'my-ads' && (
         <>
-        <button data-testid="back" onClick={handleGoBack}>{"\u0631\u062c\u0648\u0639"}</button>
+        <button className="btn-ghost back" data-testid="back" onClick={handleGoBack}>{t('رجوع')}</button>
         <MyAds
           onOpen={id => { setView('detail'); setSelectedAdId(id); }}
           onDelete={handleDeleteAd}
@@ -183,6 +200,13 @@ const App = () => {
         />
         </>
       )}
+      {view === 'admin' && user && user.role === 'admin' && (
+        <>
+          <button className="btn-ghost back" data-testid="back" onClick={handleGoBack}>{t('رجوع')}</button>
+          <AdminPanel />
+        </>
+      )}
+      </main>
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { t, tf, getLang } from '../i18n';
 import { getCategories, getCities, getAds } from '../api';
 
 const Home = ({ categories, cities, onAdSelect, onCreateAd }) => {
@@ -27,53 +28,52 @@ const Home = ({ categories, cities, onAdSelect, onCreateAd }) => {
   return (
     <div>
       <section className="hero">
-        <h1>ابحث عن أي شيء قريب منك</h1>
-        <p>آلاف الإعلانات في السيارات والعقارات والإلكترونيات</p>
+        <h1>{t('ابحث عن أي شيء قريب منك')}</h1>
+        <p>{t('آلاف الإعلانات في السيارات والعقارات والإلكترونيات')}</p>
       </section>
-      <div>
+      <div className="search-panel">
         <label>
-          فئة:
+          {t('فئة:')}
           <select value={selectedCategoryId} onChange={(e) => setSelectedCategoryId(e.target.value)} data-testid="filter-category">
-            <option value="">الكل</option>
+            <option value="">{t('الكل')}</option>
             {categories.map(category => (
-              <option key={category.id} value={category.id}>{category.name}</option>
+              <option key={category.id} value={category.id}>{tf(category, 'name')}</option>
             ))}
           </select>
         </label>
         <label>
-          مدينة:
+          {t('مدينة:')}
           <select value={selectedCityId} onChange={(e) => setSelectedCityId(e.target.value)} data-testid="filter-city">
-            <option value="">الكل</option>
+            <option value="">{t('الكل')}</option>
             {cities.map(city => (
-              <option key={city.id} value={city.id}>{city.name}</option>
+              <option key={city.id} value={city.id}>{tf(city, 'name')}</option>
             ))}
           </select>
         </label>
         <label>
-          البحث:
+          {t('البحث:')}
           <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} data-testid="search-input" />
         </label>
         <label>
-          ترتيب:
+          {t('ترتيب:')}
           <select value={sortOption} onChange={(e) => setSortOption(e.target.value)} data-testid="sort-select">
-            <option value="">الجديد أولاً</option>
-            <option value="price_asc">السعر من الأقل للأعلى</option>
-            <option value="price_desc">السعر من الأعلى للأقل</option>
+            <option value="">{t('الجديد أولاً')}</option>
+            <option value="price_asc">{t('السعر من الأقل للأعلى')}</option>
+            <option value="price_desc">{t('السعر من الأعلى للأقل')}</option>
           </select>
         </label>
-        <button onClick={onCreateAd} data-testid="post-ad-button">إنشاء إعلان</button>
+        <button onClick={onCreateAd} data-testid="post-ad-button">{t('إنشاء إعلان')}</button>
       </div>
-      <p className="trust">نصيحة أمان: قابل البائع في مكان عام ولا تحوّل أي مبلغ قبل المعاينة.</p>
+      <p className="trust">{t('نصيحة أمان: قابل البائع في مكان عام ولا تحوّل أي مبلغ قبل المعاينة.')}</p>
       <div data-testid="ad-list">
         {ads.map(ad => (
           <div key={ad.id} className="ad-card" data-testid="ad-card">
-            <h2>{ad.title}</h2>
-            {ad.imageUrl && <img data-testid="ad-thumb" src={ad.imageUrl} alt={ad.title} />}
-            <p>السعر: {ad.price}</p>
-            <p>المدينة: {ad.cityName}</p>
-            <p>الفئة: {ad.categoryName}</p>
-            <p>التاريخ: {new Date(ad.createdAt).toLocaleDateString()}</p>
-            <button onClick={() => onAdSelect(ad.id)}>تفاصيل</button>
+            {ad.imageUrl && <img data-testid="ad-thumb" src={ad.imageUrl} alt={tf(ad, 'title')} loading="lazy" />}
+            <h2>{tf(ad, 'title')}</h2>
+            <p className="ad-price" data-testid="ad-card-price"><bdi>{Number(ad.price).toLocaleString(getLang() === 'ar' ? 'ar-SA' : 'en-US')}</bdi> {t('ريال')}</p>
+            <p className="ad-meta"><span>{tf(ad, 'cityName')}</span><span>{tf(ad, 'categoryName')}</span></p>
+            <p>{new Date(ad.createdAt).toLocaleDateString(getLang() === 'ar' ? 'ar-SA' : 'en-US')}</p>
+            <button onClick={() => onAdSelect(ad.id)}>{t('تفاصيل')}</button>
           </div>
         ))}
       </div>

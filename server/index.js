@@ -23,46 +23,70 @@ if (secret) {
   fs.writeFileSync(secretPath, secret);
 }
 
-// Load or initialize the database
-const store = require('./sqlite-store');
-let db = store.load();
+// Data layer: SQLite locally (or /tmp on Vercel), Postgres (Neon) when DATABASE_URL is set
+const { createStore } = require('./store');
+const { ensureAdmin } = require('./admin-seed');
+const seedData = require('./seed-data');
+const COLLECTIONS = ['categories', 'cities', 'ads', 'users'];
+const store = createStore({ collections: COLLECTIONS, sqliteFile: 'opensooq.sqlite', pgSchema: 'opensooq' });
+const db = { categories: [], cities: [], ads: [], users: [] }; // identity never changes; refreshed in place
 const saveDb = () => store.save(db);
+const fill = (data) => { for (const k of COLLECTIONS) db[k] = Array.isArray(data[k]) ? data[k] : []; };
 
-// Ensure all required keys exist in the database
-for (const k of ['categories', 'cities', 'ads', 'users']) {
-  if (!Array.isArray(db[k])) {
-    db[k] = [];
+function prepareData() {
+  // Ensure all required keys exist in the database
+  for (const k of ['categories', 'cities', 'ads', 'users']) {
+    if (!Array.isArray(db[k])) {
+      db[k] = [];
+    }
   }
+
+  // Seed data on first run
+  if (db.categories.length === 0 && db.cities.length === 0) {
+    db.categories = [
+      { id: crypto.randomUUID(), name: 'سيارات' },
+      { id: crypto.randomUUID(), name: 'عقارات' },
+      { id: crypto.randomUUID(), name: 'الكترونيات' },
+      { id: crypto.randomUUID(), name: 'وظائف' },
+      { id: crypto.randomUUID(), name: 'أثاث' }
+    ];
+    db.cities = [
+      { id: crypto.randomUUID(), name: 'الرياض' },
+      { id: crypto.randomUUID(), name: 'جدة' },
+      { id: crypto.randomUUID(), name: 'الدمام' },
+      { id: crypto.randomUUID(), name: 'مكة' },
+      { id: crypto.randomUUID(), name: 'المدينة' }
+    ];
+  }
+
+  // English names for the seeded categories / cities
+  for (const c of db.categories) if (!c.nameEn && seedData.categoryEn[c.name]) c.nameEn = seedData.categoryEn[c.name];
+  for (const c of db.cities) if (!c.nameEn && seedData.cityEn[c.name]) c.nameEn = seedData.cityEn[c.name];
+
+  // Demo seed ads: runs when the demo listings are missing (cold start on Vercel, fresh DB, or new Postgres)
+  if (!db.ads.some((ad) => ad.demo)) {
+    const byName = (list, name) => list.find((x) => x.name === name) || list[0];
+    seedData.ads.forEach(([slug, cat, city, title, titleEn, price], i) => db.ads.push({
+      id: crypto.randomUUID(), title, titleEn, description: 'إعلان تجريبي للعرض فقط', descriptionEn: 'Demo listing for display only', price,
+      categoryId: byName(db.categories, cat).id, cityId: byName(db.cities, city).id,
+      sellerName: 'حساب تجريبي', phone: '0500000000', views: 0, imageUrl: `/demo/${slug}.svg`,
+      createdAt: new Date(Date.now() - i * 3600e3).toISOString(), demo: true,
+    }));
+  }
+  ensureAdmin(db.users);
 }
 
-// Seed data on first run
-if (db.categories.length === 0 && db.cities.length === 0) {
-  db.categories = [
-    { id: crypto.randomUUID(), name: 'سيارات' },
-    { id: crypto.randomUUID(), name: 'عقارات' },
-    { id: crypto.randomUUID(), name: 'الكترونيات' },
-    { id: crypto.randomUUID(), name: 'وظائف' },
-    { id: crypto.randomUUID(), name: 'أثاث' }
-  ];
-  db.cities = [
-    { id: crypto.randomUUID(), name: 'الرياض' },
-    { id: crypto.randomUUID(), name: 'جدة' },
-    { id: crypto.randomUUID(), name: 'الدمام' },
-    { id: crypto.randomUUID(), name: 'مكة' },
-    { id: crypto.randomUUID(), name: 'المدينة' }
-  ];
+const ready = store.init().then((data) => {
+  fill(data);
+  prepareData();
   saveDb();
-}
-
-// Demo seed ads (cold start on Vercel, or empty local DB)
-if (db.ads.length === 0 && db.categories.length && db.cities.length) {
-  const samples = [['تويوتا كامري 2021 نظيفة', 78000], ['آيفون 15 برو مستعمل', 3200], ['شقة للإيجار حي النرجس', 45000], ['كنب مجلس 7 مقاعد', 1500]];
-  samples.forEach(([title, price], i) => db.ads.push({
-    id: crypto.randomUUID(), title, description: 'إعلان تجريبي للعرض فقط', price,
-    categoryId: db.categories[i % db.categories.length].id, cityId: db.cities[i % db.cities.length].id,
-    sellerName: 'حساب تجريبي', phone: '0500000000', views: 0, createdAt: new Date().toISOString(), demo: true,
-  }));
-  saveDb();
+  return store.flush();
+});
+async function refresh() {
+  if (store.kind !== 'postgres') return;
+  const fresh = {};
+  await store.refresh(fresh);
+  fill(fresh);
 }
 
 // Helper to convert ad to public format
@@ -73,9 +97,11 @@ const toPublic = (ad) => {
   const city = db.cities.find(c => c.id === ad.cityId);
   if (category) {
     publicAd.categoryName = category.name;
+    publicAd.categoryNameEn = category.nameEn || null;
   }
   if (city) {
     publicAd.cityName = city.name;
+    publicAd.cityNameEn = city.nameEn || null;
   }
   return publicAd;
 };
@@ -87,9 +113,16 @@ const requireAuth = (req, res, next) => {
   if (!token) {
     return res.status(401).json({ error: 'غير مصرح' });
   }
-  jwt.verify(token, secret, (err, user) => {
+  jwt.verify(token, secret, (err, payload) => {
     if (err) {
       return res.status(401).json({ error: 'غير مصرح' });
+    }
+    const user = db.users.find(u => u.id === payload.id);
+    if (!user) {
+      return res.status(401).json({ error: 'غير مصرح' });
+    }
+    if (user.disabled) {
+      return res.status(403).json({ error: 'تم تعطيل هذا الحساب' });
     }
     req.user = user;
     next();
@@ -116,6 +149,7 @@ const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch
 
 // Middleware to parse JSON bodies
 app.use(express.json());
+app.use(require('./data-middleware')({ ready, refresh, flush: () => store.flush() }));
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(BASE_DIR, 'uploads');
@@ -323,15 +357,18 @@ app.get('/api/auth/me', requireAuth, wrap(async (req, res) => {
   if (!user) {
     return res.status(404).json({ error: 'المستخدم غير موجود' });
   }
-  res.json({ id: user.id, name: user.name, email: user.email });
+  res.json({ id: user.id, name: user.name, email: user.email, role: user.role || 'user' });
 }));
+
+// Admin dashboard API
+require('./admin-routes')(app, { db, saveDb, requireAuth, toPublic });
 
 app.post('/api/auth/register', wrap(async (req, res) => {
   const { name, email, password } = req.body;
   if (!name || !email || !password) {
     return res.status(400).json({ error: 'جميع الحقول مطلوبة' });
   }
-  const existingUser = db.users.find(u => u.email === email);
+  const existingUser = db.users.find(u => (u.email || '').toLowerCase() === String(email).toLowerCase());
   if (existingUser) {
     return res.status(409).json({ error: 'البريد الإلكتروني مُستخدم بالفعل' });
   }
@@ -340,12 +377,14 @@ app.post('/api/auth/register', wrap(async (req, res) => {
     id: crypto.randomUUID(),
     name,
     email,
-    passwordHash: hashedPassword
+    passwordHash: hashedPassword,
+    role: 'user',
+    createdAt: new Date().toISOString()
   };
   db.users.push(user);
   saveDb();
   const token = jwt.sign({ id: user.id, name: user.name }, secret, { expiresIn: '7d' });
-  res.status(201).json({ user: { id: user.id, name: user.name, email: user.email }, token });
+  res.status(201).json({ user: { id: user.id, name: user.name, email: user.email, role: 'user' }, token });
 }));
 
 app.post('/api/auth/login', wrap(async (req, res) => {
@@ -353,7 +392,7 @@ app.post('/api/auth/login', wrap(async (req, res) => {
   if (!email || !password) {
     return res.status(400).json({ error: 'جميع الحقول مطلوبة' });
   }
-  const user = db.users.find(u => u.email === email);
+  const user = db.users.find(u => (u.email || '').toLowerCase() === String(email).toLowerCase());
   if (!user) {
     return res.status(401).json({ error: 'البريد أو كلمة المرور غير صحيحة' });
   }
@@ -361,8 +400,11 @@ app.post('/api/auth/login', wrap(async (req, res) => {
   if (!isMatch) {
     return res.status(401).json({ error: 'البريد أو كلمة المرور غير صحيحة' });
   }
+  if (user.disabled) {
+    return res.status(403).json({ error: 'تم تعطيل هذا الحساب' });
+  }
   const token = jwt.sign({ id: user.id, name: user.name }, secret, { expiresIn: '7d' });
-  res.json({ user: { id: user.id, name: user.name, email: user.email }, token });
+  res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role || 'user' }, token });
 }));
 
 // Final error handler
@@ -386,3 +428,5 @@ if (require.main === module) {
 }
 
 module.exports = app;
+module.exports.dataReady = ready;
+module.exports.dataSnapshot = db;

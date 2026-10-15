@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { t } from '../i18n';
 
 const AuthForm = ({ type, onSubmit, onToggle, error }) => {
   const [authName, setAuthName] = useState('');
@@ -33,27 +34,27 @@ const AuthForm = ({ type, onSubmit, onToggle, error }) => {
       {type === 'register' && (
         <div>
           <label>
-            الاسم:
+            {t('الاسم:')}
             <input type="text" value={authName} onChange={(e) => setAuthName(e.target.value)} required data-testid="auth-name" />
           </label>
         </div>
       )}
       <div>
         <label>
-          البريد الإلكتروني:
+          {t('البريد الإلكتروني:')}
           <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} required data-testid="auth-email" />
         </label>
       </div>
       <div>
         <label>
-          كلمة المرور:
+          {t('كلمة المرور:')}
           <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} required data-testid="auth-password" />
         </label>
       </div>
       {error && <p data-testid="error-message">{error}</p>}
-      <button type="submit" data-testid="auth-submit">{type === 'register' ? 'تسجيل' : 'دخول'}</button>
+      <button type="submit" data-testid="auth-submit">{type === 'register' ? t('تسجيل') : t('دخول')}</button>
       <button type="button" onClick={handleToggle} data-testid="auth-toggle">
-        {type === 'register' ? 'تسجيل الدخول' : 'إنشاء حساب'}
+        {type === 'register' ? t('تسجيل الدخول') : t('إنشاء حساب')}
       </button>
     </form>
   );
