@@ -370,3 +370,9 @@ button:hover, [data-testid="post-ad-button"]:hover { background-color: #9a3412; 
 .hero p { color: #cbd5e1; margin: 0; }
 @media (min-width: 768px) { .hero { padding: 36px 28px; } .hero h1 { font-size: 2rem; } }
 .trust { font-size: .9rem; color: #475569; background-color: #fff7ed; border-inline-start: 4px solid #c2410c; padding: 10px 12px; border-radius: 10px; }
+
+/* live review fixes: compact card titles on all screens */
+*, *::before, *::after { box-sizing: border-box; }
+[data-testid="ad-card"] h2, [data-testid="ad-card"] h3 { font-size: 1rem; line-height: 1.5; margin-block: 8px 4px; }
+[data-testid="ad-card"] p { margin-block: 2px; font-size: .9rem; color: #475569; }
+@media (min-width: 768px) { [data-testid="ad-card"] h2, [data-testid="ad-card"] h3 { font-size: 1.05rem; } }

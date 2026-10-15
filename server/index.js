@@ -2,14 +2,15 @@ const express = require('express');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const BASE_DIR = process.env.VERCEL ? '/tmp' : __dirname; // Vercel: only /tmp is writable (demo data resets)
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 
 const app = express();
 const port = process.env.PORT || 5000;
-const dbPath = path.join(__dirname, 'data', 'db.json');
-const secretPath = path.join(__dirname, 'secret.txt');
+const dbPath = path.join(BASE_DIR, 'data', 'db.json');
+const secretPath = path.join(BASE_DIR, 'secret.txt');
 
 // Load or initialize the secret
 let secret = process.env.JWT_SECRET;
@@ -50,6 +51,17 @@ if (db.categories.length === 0 && db.cities.length === 0) {
     { id: crypto.randomUUID(), name: 'مكة' },
     { id: crypto.randomUUID(), name: 'المدينة' }
   ];
+  saveDb();
+}
+
+// Demo seed ads (cold start on Vercel, or empty local DB)
+if (db.ads.length === 0 && db.categories.length && db.cities.length) {
+  const samples = [['تويوتا كامري 2021 نظيفة', 78000], ['آيفون 15 برو مستعمل', 3200], ['شقة للإيجار حي النرجس', 45000], ['كنب مجلس 7 مقاعد', 1500]];
+  samples.forEach(([title, price], i) => db.ads.push({
+    id: crypto.randomUUID(), title, description: 'إعلان تجريبي للعرض فقط', price,
+    categoryId: db.categories[i % db.categories.length].id, cityId: db.cities[i % db.cities.length].id,
+    sellerName: 'حساب تجريبي', phone: '0500000000', views: 0, createdAt: new Date().toISOString(), demo: true,
+  }));
   saveDb();
 }
 
@@ -106,7 +118,7 @@ const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch
 app.use(express.json());
 
 // Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, 'uploads');
+const uploadsDir = path.join(BASE_DIR, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -367,6 +379,10 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'خطأ في الخادم' });
 });
 
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-});
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`Server is running on port ${port}`);
+  });
+}
+
+module.exports = app;
