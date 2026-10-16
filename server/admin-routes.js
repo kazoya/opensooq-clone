@@ -50,6 +50,7 @@ module.exports = function mountAdmin(app, { db, saveDb, requireAuth, toPublic })
       const field = kind === 'categories' ? 'categoryId' : 'cityId';
       if (!db[kind].some((x) => x.id === req.params.id)) return res.status(404).json({ error: `${label} غير موجود` });
       if (db.ads.some((a) => a[field] === req.params.id)) return res.status(409).json({ error: `لا يمكن حذف ${label} لوجود إعلانات مرتبطة به` });
+      if (kind === 'categories' && db.categories.some((c) => c.parentId === req.params.id)) return res.status(409).json({ error: 'لا يمكن حذف تصنيف له تصنيفات فرعية' });
       db[kind] = db[kind].filter((x) => x.id !== req.params.id);
       saveDb();
       res.status(204).send();

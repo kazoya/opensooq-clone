@@ -2,7 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const BASE_DIR = process.env.VERCEL ? '/tmp' : __dirname; // Vercel: only /tmp is writable (demo data resets)
+const BASE_DIR = process.env.BASE_DIR || (process.env.VERCEL ? '/tmp' : __dirname); // Vercel: only /tmp is writable (demo data resets)
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
@@ -27,9 +27,9 @@ if (secret) {
 const { createStore } = require('./store');
 const { ensureAdmin } = require('./admin-seed');
 const seedData = require('./seed-data');
-const COLLECTIONS = ['categories', 'cities', 'ads', 'users'];
+const COLLECTIONS = ['categories', 'cities', 'ads', 'users', 'messages', 'reports'];
 const store = createStore({ collections: COLLECTIONS, sqliteFile: 'opensooq.sqlite', pgSchema: 'opensooq' });
-const db = { categories: [], cities: [], ads: [], users: [] }; // identity never changes; refreshed in place
+const db = { categories: [], cities: [], ads: [], users: [], messages: [], reports: [] }; // identity never changes; refreshed in place
 const saveDb = () => store.save(db);
 const fill = (data) => { for (const k of COLLECTIONS) db[k] = Array.isArray(data[k]) ? data[k] : []; };
 
@@ -84,6 +84,7 @@ function ready() {
     readyPromise = store.init().then((data) => {
       fill(data);
       prepareData();
+      require('./market').upgrade(db);
       saveDb();
       return store.flush();
     }).catch((e) => { readyPromise = null; throw e; });
@@ -112,6 +113,8 @@ const toPublic = (ad) => {
     publicAd.cityName = city.name;
     publicAd.cityNameEn = city.nameEn || null;
   }
+  publicAd.images = ad.images && ad.images.length ? ad.images : (ad.imageUrl ? [ad.imageUrl] : []);
+  publicAd.sellerId = ad.userId || null;
   return publicAd;
 };
 
@@ -144,10 +147,8 @@ const optionalAuth = (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1];
   if (token) {
     jwt.verify(token, secret, (err, user) => {
-      if (err) {
-        return res.status(401).json({ error: 'غير مصرح' });
-      }
-      req.user = user;
+      // a stale/invalid token on a public route is ignored (browse as a guest)
+      if (!err) req.user = user;
     });
   }
   next();
@@ -177,108 +178,13 @@ app.get('/api/health', wrap(async (req, res) => {
   res.json({ status: 'ok' });
 }));
 
-app.get('/api/categories', wrap(async (req, res) => {
-  res.json(db.categories);
-}));
-
 app.get('/api/cities', wrap(async (req, res) => {
   res.json(db.cities);
-}));
-
-app.get('/api/ads', wrap(async (req, res) => {
-  const { categoryId, cityId, q, minPrice, maxPrice, sort } = req.query;
-  let ads = db.ads.slice();
-
-  if (categoryId) {
-    ads = ads.filter(ad => ad.categoryId === categoryId);
-  }
-
-  if (cityId) {
-    ads = ads.filter(ad => ad.cityId === cityId);
-  }
-
-  if (q) {
-    const query = q.toLowerCase();
-    ads = ads.filter(ad => 
-      ad.title.toLowerCase().includes(query) || 
-      ad.description.toLowerCase().includes(query)
-    );
-  }
-
-  if (minPrice !== undefined && minPrice !== '') {
-    const min = parseFloat(minPrice);
-    if (isNaN(min)) {
-      return res.status(400).json({ error: 'minPrice must be a number' });
-    }
-    ads = ads.filter(ad => ad.price >= min);
-  }
-
-  if (maxPrice !== undefined && maxPrice !== '') {
-    const max = parseFloat(maxPrice);
-    if (isNaN(max)) {
-      return res.status(400).json({ error: 'maxPrice must be a number' });
-    }
-    ads = ads.filter(ad => ad.price <= max);
-  }
-
-  if (sort === 'price_asc') {
-    ads.sort((a, b) => a.price - b.price);
-  } else if (sort === 'price_desc') {
-    ads.sort((a, b) => b.price - a.price);
-  } else {
-    ads.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }
-
-  const publicAds = ads.map(ad => toPublic(ad));
-  res.json(publicAds);
 }));
 
 app.get('/api/my/ads', requireAuth, wrap(async (req, res) => {
   const mine = db.ads.filter(ad => ad.userId === req.user.id).slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   res.json(mine.map(ad => toPublic(ad)));
-}));
-
-app.get('/api/ads/:id', wrap(async (req, res) => {
-  const { id } = req.params;
-  const ad = db.ads.find(a => a.id === id);
-  if (!ad) {
-    return res.status(404).json({ error: 'الإعلان غير موجود' });
-  }
-  ad.views = (ad.views || 0) + 1;
-  saveDb();
-  res.json(toPublic(ad));
-}));
-
-app.post('/api/ads', requireAuth, wrap(async (req, res) => {
-  const { title, description, price, categoryId, cityId, sellerName, phone } = req.body;
-  if (!title || !description || typeof price !== 'number' || price < 0 || !phone) {
-    return res.status(400).json({ error: 'جميع الحقول مطلوبة' });
-  }
-  if (title.length < 3 || title.length > 100) {
-    return res.status(400).json({ error: 'عنوان الإعلان يجب أن يكون بين 3 و100 حرفًا' });
-  }
-  if (!db.categories.some(c => c.id === categoryId)) {
-    return res.status(400).json({ error: 'الفئة غير موجودة' });
-  }
-  if (!db.cities.some(c => c.id === cityId)) {
-    return res.status(400).json({ error: 'المدينة غير موجودة' });
-  }
-  const ad = {
-    id: crypto.randomUUID(),
-    title,
-    description,
-    price,
-    categoryId,
-    cityId,
-    sellerName: sellerName || req.user.name,
-    phone,
-    userId: req.user.id,
-    createdAt: new Date().toISOString(),
-    views: 0
-  };
-  db.ads.push(ad);
-  saveDb();
-  res.status(201).json(ad);
 }));
 
 app.delete('/api/ads/:id', optionalAuth, wrap(async (req, res) => {
@@ -313,54 +219,6 @@ app.delete('/api/ads/:id', optionalAuth, wrap(async (req, res) => {
   res.status(204).send();
 }));
 
-app.post('/api/ads/:id/image', requireAuth, upload, wrap(async (req, res) => {
-  const { id } = req.params;
-  const ad = db.ads.find(a => a.id === id);
-  if (!ad) {
-    return res.status(404).json({ error: 'الإعلان غير موجود' });
-  }
-  if (ad.userId !== req.user.id) {
-    return res.status(403).json({ error: 'غير مصرح' });
-  }
-  if (!req.file) {
-    return res.status(400).json({ error: 'لا يوجد ملف صورة' });
-  }
-
-  const detectFileType = (buffer) => {
-    const magicNumber = buffer.slice(0, 8).toString('hex');
-    if (magicNumber.startsWith('89504e470d0a1a0a')) { // PNG
-      return 'png';
-    } else if (magicNumber.startsWith('ffd8ff')) { // JPEG
-      return 'jpg';
-    } else if (magicNumber.startsWith('825649574150')) { // WEBP
-      return 'webp';
-    }
-    return null;
-  };
-
-  const ext = detectFileType(req.file.buffer);
-  if (!ext) {
-    return res.status(400).json({ error: 'نوع الملف غير مدعوم' });
-  }
-
-  if (ad.imageUrl) {
-    const oldImagePath = path.join(uploadsDir, path.basename(ad.imageUrl));
-    try {
-      fs.unlinkSync(oldImagePath);
-    } catch (err) {
-      console.error('Error deleting old image file:', err);
-    }
-  }
-
-  const newImagePath = path.join(uploadsDir, `${crypto.randomUUID()}.${ext}`);
-  fs.writeFileSync(newImagePath, req.file.buffer);
-
-  ad.imageUrl = `/uploads/${path.basename(newImagePath)}`;
-  saveDb();
-
-  res.status(200).json({ imageUrl: ad.imageUrl });
-}));
-
 app.get('/api/auth/me', requireAuth, wrap(async (req, res) => {
   const user = db.users.find(u => u.id === req.user.id);
   if (!user) {
@@ -370,6 +228,7 @@ app.get('/api/auth/me', requireAuth, wrap(async (req, res) => {
 }));
 
 // Admin dashboard API
+require('./market').mount(app, { db, saveDb, requireAuth, optionalAuth, toPublic, uploadsDir, upload, requireAdmin: require('./require-admin') });
 require('./admin-routes')(app, { db, saveDb, requireAuth, toPublic });
 
 app.post('/api/auth/register', wrap(async (req, res) => {

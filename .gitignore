@@ -17,3 +17,4 @@ db.json.*
 .neon/
 .neon
 neon.ts
+graphify-out/

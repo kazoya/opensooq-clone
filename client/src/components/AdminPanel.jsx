@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { t } from '../i18n';
 import { adminApi } from '../adminApi';
+import { market } from '../marketApi';
 
-const TAB_LABELS = { stats: 'الإحصائيات', users: 'المستخدمون', ads: 'الإعلانات', 'categories-cities': 'التصنيفات والمدن' };
+const TAB_LABELS = { stats: 'الإحصائيات', users: 'المستخدمون', ads: 'الإعلانات', reports: 'البلاغات', 'categories-cities': 'التصنيفات والمدن' };
 const STAT_LABELS = { users: 'المستخدمون', ads: 'الإعلانات', categories: 'التصنيفات', cities: 'المدن', views: 'المشاهدات' };
+const REPORT_STATUS = { open: 'مفتوح', dismissed: 'تم التجاهل', ad_removed: 'تم حذف الإعلان' };
 const ROLE_LABELS = { admin: 'مدير', user: 'مستخدم' };
 
 export default function AdminPanel() {
@@ -11,6 +13,7 @@ export default function AdminPanel() {
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
   const [ads, setAds] = useState([]);
+  const [reports, setReports] = useState([]);
   const [categories, setCategories] = useState([]);
   const [cities, setCities] = useState([]);
   const [error, setError] = useState('');
@@ -28,6 +31,9 @@ export default function AdminPanel() {
             break;
           case 'ads':
             setAds(await adminApi.ads());
+            break;
+          case 'reports':
+            setReports(await market.adminReports());
             break;
           case 'categories-cities':
             setCategories(await adminApi.categories());
@@ -109,7 +115,7 @@ export default function AdminPanel() {
   return (
     <section data-testid="admin-panel" className="admin">
       <nav className="admin-tabs">
-        {['stats', 'users', 'ads', 'categories-cities'].map(tab => (
+        {['stats', 'users', 'ads', 'reports', 'categories-cities'].map(tab => (
           <button
             key={tab}
             type="button"
@@ -191,6 +197,7 @@ export default function AdminPanel() {
                   <th>{t('التصنيف')}</th>
                   <th>{t('البائع')}</th>
                   <th>{t('المشاهدات')}</th>
+                  <th>{t('مميز')}</th>
                   <th><span className="sr-only">{t('إجراءات')}</span></th>
                 </tr>
               </thead>
@@ -203,6 +210,13 @@ export default function AdminPanel() {
                     <td>{ad.categoryName}</td>
                     <td>{ad.sellerName}</td>
                     <td>{ad.views}</td>
+                    <td>
+                      <label className="switch">
+                        <input type="checkbox" checked={!!ad.featured} data-testid="admin-featured" aria-label={`${t('مميز')}: ${ad.title}`}
+                          onChange={async (e) => { const on = e.target.checked; try { await market.setFeatured(ad.id, on); setAds(ads.map((a) => (a.id === ad.id ? { ...a, featured: on } : a))); } catch (err) { setError(err.message); } }} />
+                        <span>{ad.featured ? '★' : '☆'}</span>
+                      </label>
+                    </td>
                     <td>
                       <button
                         type="button"
@@ -220,6 +234,33 @@ export default function AdminPanel() {
         ) : (
           <p>{t('لا توجد بيانات')}</p>
         )
+      )}
+
+      {activeTab === 'reports' && (
+        reports.length ? (
+          <div className="table-wrap">
+            <table className="admin-table" data-testid="admin-reports">
+              <thead><tr><th>{t('الإعلان')}</th><th>{t('سبب البلاغ')}</th><th>{t('ملاحظات')}</th><th>{t('المبلّغ')}</th><th>{t('الحالة')}</th><th><span className="sr-only">{t('إجراءات')}</span></th></tr></thead>
+              <tbody>
+                {reports.map((r) => (
+                  <tr key={r.id} data-testid="admin-report-row">
+                    <td>{r.ad ? r.ad.title : <em>{t('إعلان محذوف')}</em>}</td>
+                    <td>{t(r.reason)}</td>
+                    <td>{r.note || '—'}</td>
+                    <td>{r.reporter || '—'}</td>
+                    <td><span className={'status-pill ' + r.status}>{t(REPORT_STATUS[r.status] || r.status)}</span></td>
+                    <td><div className="row-actions">
+                      {r.status === 'open' && <>
+                        <button type="button" className="btn-ghost" data-testid="report-dismiss" onClick={async () => { try { await market.resolveReport(r.id, 'dismiss'); setReports(await market.adminReports()); } catch (e) { setError(e.message); } }}>{t('تجاهل')}</button>
+                        <button type="button" data-testid="admin-delete-reported" onClick={async () => { if (!window.confirm(t('حذف الإعلان المبلّغ عنه؟'))) return; try { await market.resolveReport(r.id, 'remove_ad'); setReports(await market.adminReports()); } catch (e) { setError(e.message); } }}>{t('حذف الإعلان')}</button>
+                      </>}
+                    </div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p data-testid="no-reports">{t('لا توجد بلاغات')}</p>
       )}
 
       {activeTab === 'categories-cities' && (

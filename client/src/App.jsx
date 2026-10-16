@@ -9,6 +9,10 @@ import AdDetail from './components/AdDetail';
 import PostAd from './components/PostAd';
 import AuthForm from './components/AuthForm';
 import MyAds from './components/MyAds';
+import Favorites from './components/Favorites';
+import Messages from './components/Messages';
+import SellerProfile from './components/SellerProfile';
+import { market } from './marketApi';
 
 const App = () => {
   useLang();
@@ -24,6 +28,15 @@ const App = () => {
   const [authFormType, setAuthFormType] = useState('login'); // 'login' or 'register'
   const [authFormError, setAuthFormError] = useState('');
   const [pendingView, setPendingView] = useState(null);
+  const [sellerId, setSellerId] = useState(null);
+  const [unread, setUnread] = useState(0);
+  const needLogin = () => { setAuthFormError(''); setAuthFormVisible(true); setAuthFormType('login'); window.scrollTo(0, 0); };
+  useEffect(() => {
+    if (!user) { setUnread(0); return; }
+    const poll = () => market.conversations().then((c) => setUnread(c.reduce((n, x) => n + x.unread, 0))).catch(() => {});
+    poll(); const h = setInterval(poll, 20000); return () => clearInterval(h);
+  }, [user]);
+  const go = (v) => { setView(v); window.scrollTo(0, 0); };
 
   useEffect(() => {
     const fetchCategoriesData = async () => {
@@ -59,7 +72,7 @@ const App = () => {
 
   const handleSelectAd = (id) => {
     setSelectedAdId(id);
-    setView('detail');
+    setView('detail'); window.scrollTo(0, 0);
   };
 
   const handleGoBack = () => {
@@ -77,13 +90,13 @@ const App = () => {
     }
   };
 
-  const handlePostAd = async (adData, imageFile) => {
+  const handlePostAd = async (adData, imageFiles = []) => {
     try {
       const newAd = await createAd({ ...adData, sellerName: user ? user.name : adData.sellerName });
       setSelectedAdId(newAd.id);
       setEditTokenMap(prevMap => ({ ...prevMap, [newAd.id]: newAd.editToken }));
       localStorage.setItem(`editToken-${newAd.id}`, newAd.editToken);
-      if (imageFile) await uploadAdImage(newAd.id, imageFile);
+      for (const file of imageFiles) await uploadAdImage(newAd.id, file);
       setView('detail');
     } catch (error) {
       throw error;
@@ -150,6 +163,8 @@ const App = () => {
             {user.role === 'admin' && (
               <button className="btn-ghost" onClick={() => setView('admin')} data-testid="nav-admin">{t('لوحة المدير')}</button>
             )}
+            <button className="btn-ghost" onClick={() => go('favorites')} data-testid="nav-favorites">♥ {t('المفضلة')}</button>
+            <button className="btn-ghost" onClick={() => go('messages')} data-testid="nav-messages">✉ {t('الرسائل')}{unread > 0 && <span className="unread" data-testid="nav-unread">{unread}</span>}</button>
             <button className="btn-ghost" onClick={() => setView('my-ads')} data-testid="nav-my-ads">{t('إعلاناتي')}</button>
             <button className="btn-ghost" onClick={() => { handleLogout(); setView('home'); }} data-testid="logout">{t('تسجيل الخروج')}</button>
           </>
@@ -174,6 +189,8 @@ const App = () => {
           cities={cities}
           onAdSelect={handleSelectAd}
           onCreateAd={handleCreateAd}
+          user={user}
+          onNeedLogin={needLogin}
         />
       )}
       {view === 'detail' && (
@@ -181,14 +198,19 @@ const App = () => {
           adId={selectedAdId}
           onGoBack={handleGoBack}
           onDeleteAd={handleDeleteAd}
-          userId={user ? user.id : null}
+          user={user}
+          onNeedLogin={needLogin}
+          onOpenSeller={(id) => { setSellerId(id); go('seller'); }}
+          onOpenMessages={() => go('messages')}
         />
       )}
       {view === 'post' && (
-        <PostAd
-          onSubmit={handlePostAd}
-          userId={user ? user.id : null}
-        />
+        <PostAd onSubmit={handlePostAd} categories={categories} cities={cities} user={user} />
+      )}
+      {view === 'favorites' && user && <Favorites onOpen={handleSelectAd} user={user} />}
+      {view === 'messages' && user && <Messages onOpenAd={handleSelectAd} onUnread={setUnread} />}
+      {view === 'seller' && sellerId && (
+        <SellerProfile sellerId={sellerId} onOpen={handleSelectAd} user={user} onNeedLogin={needLogin} onBack={() => go(selectedAdId ? 'detail' : 'home')} />
       )}
       {view === 'my-ads' && (
         <>

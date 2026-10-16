@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 function createStore({ collections, sqliteFile, pgSchema }) {
-  const BASE_DIR = process.env.VERCEL ? '/tmp' : __dirname;
+  const BASE_DIR = process.env.BASE_DIR || (process.env.VERCEL ? '/tmp' : __dirname);
   const keyOf = (item) => String(item.id || item.sessionId);
 
   if (!process.env.DATABASE_URL) {
